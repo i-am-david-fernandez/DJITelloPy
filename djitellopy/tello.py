@@ -1,10 +1,11 @@
 # coding=utf-8
 import logging
 import socket
-import time
 import threading
+import time
+
 import cv2
-from threading import Thread
+
 from djitellopy.decorators import accepts
 
 
@@ -589,7 +590,7 @@ class BackgroundFrameRead:
         self.stopped = False
 
     def start(self):
-        Thread(target=self.update_frame, args=()).start()
+        threading.Thread(target=self.update_frame, args=()).start()
         return self
 
     def update_frame(self):
