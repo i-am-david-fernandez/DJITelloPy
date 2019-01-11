@@ -29,6 +29,11 @@ class Tello:
     VS_UDP_IP = '0.0.0.0'
     VS_UDP_PORT = 11111
 
+    # State/telemetry server config
+    TELEMETRY_UDP_IP = '0.0.0.0'
+    TELEMETRY_UDP_PORT = 8890
+    background_telemetry_reader = None
+
     # VideoCapture object
     cap = None
     background_frame_read = None
@@ -88,6 +93,13 @@ class Tello:
 
     def stop_video_capture(self):
         return self.streamoff()
+
+    def get_telemetry_reader(self):
+        if self.background_telemetry_reader is None:
+            self.background_telemetry_reader = BackgroundTelemetryReader(host=self.TELEMETRY_UDP_IP,
+                                                                         port=self.TELEMETRY_UDP_PORT)
+            self.background_telemetry_reader.start()
+        return self.background_telemetry_reader
 
     @accepts(command=str)
     def send_command_with_return(self, command):
@@ -571,6 +583,8 @@ class Tello:
             self.background_frame_read.stop()
         if self.cap is not None:
             self.cap.release()
+        if self.background_telemetry_reader is not None:
+            self.background_telemetry_reader.stop()
 
 
 class BackgroundFrameRead:
@@ -602,3 +616,81 @@ class BackgroundFrameRead:
 
     def stop(self):
         self.stopped = True
+
+
+class BackgroundTelemetryReader(object):
+
+    _logger = logging.getLogger(__name__)
+
+    _fields = {
+        'mid': '32',
+        'x': '0',
+        'y': '0',
+        'z': '0',
+        'mpry': '0,0,0',
+        'pitch': '-1',
+        'roll': '0',
+        'yaw': '5',
+        'vgx': '0',
+        'vgy': '0',
+        'vgz': '0',
+        'templ': '70',
+        'temph': '72',
+        'tof': '10',
+        'h': '0',
+        'bat': '94',
+        'baro': '124.37',
+        'time': '0',
+        'agx': '-22.00',
+        'agy': '15.00',
+        'agz': '-1001.00',
+    }
+
+    def __init__(self, host, port):
+
+        self._running = False
+        self._worker = None
+
+        self._host = host
+        self._port = port
+
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        self._data = None
+
+    @property
+    def data(self):
+        return self._data
+
+    def start(self):
+        self._worker = threading.Thread(target=self._update_telemetry, args=())
+        self._running = True
+        self._worker.start()
+        return self
+
+    def stop(self):
+        self._running = False
+        if self._worker is not None:
+            self._worker.join()
+
+    def _update_telemetry(self):
+
+        self._socket.bind((self._host, self._port))
+
+        while self._running:
+            (data, addr) = self._socket.recvfrom(128*1024)
+
+            telemetry = {}
+            for e in data.decode('utf8').rstrip().split(';'):
+                bits = e.partition(':')
+                k = bits[0]
+                if k in self._fields:
+                    v = bits[-1]
+                    try:
+                        telemetry[k] = float(v)
+                    except:
+                        telemetry[k] = v
+
+            self._data = telemetry
+            #self._logger.debug("Formatted: %s", self._data)
