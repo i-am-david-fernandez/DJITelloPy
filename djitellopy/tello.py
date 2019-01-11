@@ -1,4 +1,5 @@
 # coding=utf-8
+import logging
 import socket
 import time
 import threading
@@ -8,6 +9,9 @@ from djitellopy.decorators import accepts
 
 
 class Tello:
+
+    _logger = logging.getLogger(__name__)
+
     """Python wrapper to interact with the Ryze Tello drone using the official Tello api.
     Tello API documentation:
     https://dl-cdn.ryzerobotics.com/downloads/tello/20180910/Tello%20SDK%20Documentation%20EN_1.3.pdf
@@ -51,7 +55,7 @@ class Tello:
             try:
                 self.response, _ = self.clientSocket.recvfrom(1024)  # buffer size is 1024 bytes
             except Exception as e:
-                print(e)
+                self._logger.error(e)
                 break
 
     def get_udp_video_address(self):
@@ -95,17 +99,17 @@ class Tello:
         if diff < self.TIME_BTW_COMMANDS:
             time.sleep(diff)
 
-        print('Send command: ' + command)
+        self._logger.debug('Send command: ' + command)
         timestamp = int(time.time() * 1000)
 
         self.clientSocket.sendto(command.encode('utf-8'), self.address)
 
         while self.response is None:
             if (time.time() * 1000) - timestamp > self.RESPONSE_TIMEOUT * 1000:
-                print('Timeout exceed on command ' + command)
+                self._logger.error('Timeout exceed on command ' + command)
                 return False
 
-        print('Response: ' + str(self.response))
+        self._logger.debug('Response: ' + str(self.response))
 
         response = self.response.decode('utf-8')
 
@@ -139,7 +143,7 @@ class Tello:
         """
         # Commands very consecutive makes the drone not respond to them. So wait at least self.TIME_BTW_COMMANDS seconds
 
-        print('Send command (no expect response): ' + command)
+        self._logger.debug('Send command (no expect response): ' + command)
         self.clientSocket.sendto(command.encode('utf-8'), self.address)
 
     @accepts(command=str)
@@ -200,7 +204,7 @@ class Tello:
         try:
             response = str(response)
         except TypeError as e:
-            print(e)
+            self._logger.error(e)
             pass
 
         if ('error' not in response) and ('ERROR' not in response) and ('False' not in response):
@@ -211,10 +215,10 @@ class Tello:
         else:
             return self.return_error_on_send_command(command, response)
 
-    @staticmethod
-    def return_error_on_send_command(command, response):
+    @classmethod
+    def return_error_on_send_command(cls, command, response):
         """Returns False and print an informative result code to show unsuccessful response"""
-        print('Command ' + command + ' was unsuccessful. Message: ' + str(response))
+        cls._logger.error('Command ' + command + ' was unsuccessful. Message: ' + str(response))
         return False
 
     def connect(self):
